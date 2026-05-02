@@ -1,0 +1,61 @@
+services:
+  app:
+    build:
+      context: .
+      dockerfile: deploy/Dockerfile.app
+    container_name: xai-lab-app
+    env_file: [.env]
+    environment:
+      MODEL_CACHE_DIR: /app/.cache/torch
+    volumes:
+      - torch_cache:/app/.cache/torch
+      - ./data/samples:/app/data/samples:ro
+      - ./report:/app/report
+    ports:
+      - "8501:8501"
+    networks: [default, proxy]
+    # GPU passthrough — wymaga nvidia-container-toolkit na hoscie.
+    # Jesli brak GPU/runtime, kontener ruszy bez GPU (torch padnie do CPU).
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: all
+              capabilities: [gpu]
+    labels:
+      - "traefik.enable=true"
+      - "traefik.docker.network=proxy"
+      - "traefik.http.routers.xai-lab.rule=Host(`${APP_HOSTNAME:-xai.local.pl}`)"
+      - "traefik.http.services.xai-lab.loadbalancer.server.port=8501"
+    restart: unless-stopped
+
+  report-gen:
+    build:
+      context: .
+      dockerfile: deploy/Dockerfile.app
+    container_name: xai-lab-report-gen
+    profiles: ["report"]
+    env_file: [.env]
+    environment:
+      MODEL_CACHE_DIR: /app/.cache/torch
+    volumes:
+      - torch_cache:/app/.cache/torch
+      - ./data/samples:/app/data/samples:ro
+      - ./report:/app/report
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: all
+              capabilities: [gpu]
+    command: ["bash", "-c", "python -m scripts.run_batch && python report/build_pdf.py"]
+
+networks:
+  default:
+  proxy:
+    external: true
+
+volumes:
+  torch_cache:

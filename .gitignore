@@ -1,0 +1,42 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.egg-info/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+
+# Venv
+.venv/
+venv/
+env/
+
+# IDE
+.idea/
+.vscode/
+*.swp
+
+# Env
+.env
+.env.local
+
+# Cache modeli i dane uruchomieniowe
+.cache/
+data/cache/
+*.pth
+
+# Stockowe obrazy testowe (Getty, Shutterstock — fair use academic, NIE publikowac)
+data/samples/*.webp
+data/samples/*.jpg
+data/samples/*.jpeg
+data/samples/*.png
+!data/samples/README.md
+
+# Wyniki sprawozdania (regenerowalne)
+report/figures/*.png
+report/report.pdf
+
+# OS
+.DS_Store
+Thumbs.db
