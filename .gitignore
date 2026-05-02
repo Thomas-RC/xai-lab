@@ -21,6 +21,12 @@ env/
 .env
 .env.local
 
+# Secrets (GCP service account JSON, klucze API itp.) — NIGDY nie commitowac
+secrets/
+*.json.key
+gcp-*.json
+service-account*.json
+
 # Cache modeli i dane uruchomieniowe
 .cache/
 data/cache/

@@ -19,6 +19,7 @@ from PIL import Image
 from src.config import settings
 from src.metrics.iou import pairwise_iou
 from src.models.loader import ModelName, load_model, predict
+from src.translation import translate_labels
 from src.utils.imagenet import label_for, top_k as topk_predictions
 from src.utils.preprocess import to_display_array, to_model_tensor
 from src.utils.viz import overlay_heatmap
@@ -34,14 +35,25 @@ def cached_load_model(name: ModelName, device: str):
 
 def render_predictions(probs: torch.Tensor) -> int:
     top5 = topk_predictions(probs, k=5)
+    en_labels = [label for _, label, _ in top5]
+    try:
+        with st.spinner("Tłumaczę etykiety przez Gemini 2.5 Flash..."):
+            pl_labels = translate_labels(en_labels)
+    except Exception as exc:  # noqa: BLE001
+        st.warning(f"Nie udało się przetłumaczyć etykiet (Vertex AI): {exc}")
+        pl_labels = en_labels
+
     df = pd.DataFrame(
         [
-            {"idx": idx, "klasa": label, "pewność": f"{p:.1%}"}
-            for idx, label, p in top5
+            {"idx": idx, "klasa (PL)": pl, "klasa (EN)": en, "pewność": f"{p:.1%}"}
+            for (idx, en, p), pl in zip(top5, pl_labels, strict=True)
         ]
     )
     st.dataframe(df, hide_index=True, use_container_width=True)
-    options = {f"{label} (idx {idx})": idx for idx, label, _ in top5}
+    options = {
+        f"{pl} / {en} (idx {idx})": idx
+        for (idx, en, _), pl in zip(top5, pl_labels, strict=True)
+    }
     chosen_label = st.radio(
         "Klasa do wyjaśnienia:",
         list(options.keys()),

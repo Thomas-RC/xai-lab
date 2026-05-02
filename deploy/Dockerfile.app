@@ -48,7 +48,8 @@ RUN pip install \
     "markdown>=3.7" \
     "pygments>=2.18.0" \
     "pandas>=2.2.0" \
-    "tabulate>=0.9.0"
+    "tabulate>=0.9.0" \
+    "google-genai>=1.74.0"
 
 COPY src ./src
 COPY scripts ./scripts

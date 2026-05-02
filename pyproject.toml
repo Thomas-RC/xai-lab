@@ -32,6 +32,8 @@ dependencies = [
     "weasyprint>=63.0",
     "markdown>=3.7",
     "pygments>=2.18.0",
+    # Vertex AI (Gemini 2.5 Flash do tlumaczenia etykiet PL)
+    "google-genai>=1.74.0",
 ]
 
 [project.optional-dependencies]

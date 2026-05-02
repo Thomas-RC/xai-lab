@@ -7,10 +7,15 @@ services:
     env_file: [.env]
     environment:
       MODEL_CACHE_DIR: /app/.cache/torch
+      GOOGLE_APPLICATION_CREDENTIALS: /app/secrets/${GCP_SA_FILENAME}
+      GOOGLE_CLOUD_PROJECT: ${GCP_PROJECT}
+      GOOGLE_CLOUD_LOCATION: ${GCP_LOCATION}
+      GOOGLE_GENAI_USE_VERTEXAI: "True"
     volumes:
       - torch_cache:/app/.cache/torch
       - ./data/samples:/app/data/samples:ro
       - ./report:/app/report
+      - ./secrets:/app/secrets:ro
     ports:
       - "8501:8501"
     networks: [default, proxy]
@@ -39,10 +44,15 @@ services:
     env_file: [.env]
     environment:
       MODEL_CACHE_DIR: /app/.cache/torch
+      GOOGLE_APPLICATION_CREDENTIALS: /app/secrets/${GCP_SA_FILENAME}
+      GOOGLE_CLOUD_PROJECT: ${GCP_PROJECT}
+      GOOGLE_CLOUD_LOCATION: ${GCP_LOCATION}
+      GOOGLE_GENAI_USE_VERTEXAI: "True"
     volumes:
       - torch_cache:/app/.cache/torch
       - ./data/samples:/app/data/samples:ro
       - ./report:/app/report
+      - ./secrets:/app/secrets:ro
     deploy:
       resources:
         reservations:
