@@ -39,11 +39,10 @@ data/samples/*.jpeg
 data/samples/*.png
 !data/samples/README.md
 
-# Wyniki sprawozdania (regenerowalne przez `make report`)
-report/figures/*.png
-report/figures/*.csv
-report/figures/*.json
-report/report.pdf
+# Sprawozdanie: w repo TYLKO finalny report.pdf
+# (build_pdf.py, report.md, figures/ — generowane lokalnie, nie w gicie)
+report/*
+!report/report.pdf
 
 # OS
 .DS_Store
