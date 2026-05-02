@@ -33,8 +33,10 @@ data/samples/*.jpeg
 data/samples/*.png
 !data/samples/README.md
 
-# Wyniki sprawozdania (regenerowalne)
+# Wyniki sprawozdania (regenerowalne przez `make report`)
 report/figures/*.png
+report/figures/*.csv
+report/figures/*.json
 report/report.pdf
 
 # OS
