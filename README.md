@@ -61,4 +61,5 @@ xai-lab/
 
 ## Licencja
 
-Projekt edukacyjny. Modele i dane: licencje upstream (torchvision / ImageNet).
+Kod: [MIT](LICENSE) © 2026 Thomas-RC.
+Modele i dane: licencje upstream (torchvision / ImageNet).

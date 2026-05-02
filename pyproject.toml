@@ -4,6 +4,8 @@ version = "0.1.0"
 description = "Webowa stacja diagnostyczna dla klasyfikatorow obrazow: 6 metod XAI x 2 architektury (CNN + ViT)"
 requires-python = ">=3.12"
 readme = "README.md"
+license = { file = "LICENSE" }
+authors = [{ name = "Thomas-RC" }]
 
 dependencies = [
     # ML core (torch CPU instalowany osobno z indeksu CPU w Dockerfile)
