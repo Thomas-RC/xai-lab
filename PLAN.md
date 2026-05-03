@@ -56,6 +56,7 @@ zgodności z RODO / EU AI Act (right to explanation), debug błędnych predykcji
 | XAI: occlusion | własna implementacja | — | dydaktycznie warto napisać samemu (Zeiler 2014) |
 | Web UI | Streamlit | 1.40+ | minimum tarcia, gotowe upload + wykresy |
 | Reverse proxy | Traefik (zewnętrzna sieć `proxy`) | — | spójność z konwencją `*.local.pl` |
+| Tłumaczenie etykiet | Gemini 2.5 Flash via Vertex AI (`google-genai`) | 1.74+ | top-5 ImageNet EN → PL on-demand, region `europe-west9` (EOG) |
 | Sprawozdanie | Markdown → WeasyPrint → PDF | — | bez LaTeX, lekka zależność |
 | CI lokalne | Makefile + pytest + ruff | — | spójność z drugą apką |
 
@@ -172,6 +173,14 @@ patche 14×14 → mapa 14×14 → upsample. Jeden z punktów dyskusji w sprawozd
 | Occlusion | 2014 | model-agnostic | nie | tak | średnia (patch) | (H/s × W/s) × forward |
 | LIME | 2016 | lokalny surrogate | nie | tak | super-piksele | N× forward (N=1000) |
 
+**Działanie metod na Gemini 2.5 Flash (Vision LLM):** żadna z 6 nie działa
+out-of-the-box. Grad-CAM/Grad-CAM++/IG/SmoothGrad wymagają gradientu
+względem dyskretnego logitu klasy — LLM zwraca tekst, brak logitów.
+Occlusion i LIME teoretycznie zadziałałyby (model-agnostic), ale każde
+maskowanie = osobny request do Vertex AI: ~170 wywołań sieciowych
+dla obrazu 224×224 = nieakceptowalny koszt i latencja. To **aktywne
+pole badawcze** — patrz dyskusja w sprawozdaniu (sekcja 8.3).
+
 **Klucz do interpretacji** (treść sprawozdania):
 
 - **Grad-CAM**: pokazuje "gdzie model patrzy" w sensie kanałów feature map
@@ -193,63 +202,35 @@ patche 14×14 → mapa 14×14 → upsample. Jeden z punktów dyskusji w sprawozd
 xai-lab/
 ├── PLAN.md                       # ten plik
 ├── README.md                     # quick start: make up → xai.local.pl
+├── LICENSE                       # MIT
 ├── Makefile                      # up / down / logs / test / report / fmt
-├── docker-compose.yml            # app + (opcjonalnie) report-gen
-├── pyproject.toml                # torch, torchvision, captum, lime, streamlit, weasyprint
-├── .env.example                  # APP_PORT, MODEL_CACHE_DIR, DEFAULT_MODEL, DEVICE
-├── .gitignore
+├── docker-compose.yml            # app + (opcjonalnie) report-gen + mount secrets/
+├── pyproject.toml                # torch, torchvision, captum, lime, streamlit, google-genai, weasyprint
+├── .env.example                  # APP_PORT, DEFAULT_MODEL, DEVICE, GCP_PROJECT, GCP_LOCATION
+├── .gitignore                    # secrets/, .env, report/* (oprócz report.pdf)
+├── secrets/                      # GCP service account JSON (gitignored)
 ├── deploy/
-│   └── Dockerfile.app            # python:3.12-slim + torch CPU + captum
+│   └── Dockerfile.app            # python:3.12-slim + torch CUDA 12.4 + captum + google-genai
 ├── src/
-│   ├── __init__.py
 │   ├── config.py                 # pydantic-settings
-│   ├── models/
-│   │   ├── __init__.py
-│   │   └── loader.py             # ResNet50, ViT-B/16, cache w RAM
-│   ├── xai/
-│   │   ├── __init__.py
-│   │   ├── base.py               # ABC: XAIMethod (input → heatmap [H,W] in [0,1])
-│   │   ├── gradcam.py            # wrapper na pytorch-grad-cam
-│   │   ├── gradcam_pp.py
-│   │   ├── integrated_grads.py   # captum.IntegratedGradients
-│   │   ├── smoothgrad.py         # captum.NoiseTunnel
-│   │   ├── occlusion.py          # własna implementacja (~50 linii)
-│   │   └── lime_xai.py           # lime.lime_image
-│   ├── ui/
-│   │   ├── __init__.py
-│   │   └── streamlit_app.py      # entry point: streamlit run
-│   ├── metrics/
-│   │   ├── __init__.py
-│   │   ├── iou.py                # IoU heatmap parami (po thresholdzie)
-│   │   └── timing.py             # context manager dla pomiarów
-│   └── utils/
-│       ├── __init__.py
-│       ├── imagenet.py           # mapping idx → label
-│       ├── preprocess.py         # transforms ImageNet
-│       └── viz.py                # overlay, gallery, colormap
+│   ├── models/loader.py          # ResNet50, ViT-B/16, cache w RAM
+│   ├── xai/                      # 6 metod: gradcam, gradcam_pp, ig, smoothgrad, occlusion, lime_xai
+│   ├── translation/              # NOWE: Gemini 2.5 Flash via Vertex AI
+│   │   └── gemini.py             # translate_labels(EN) -> PL, batch top-5, cache w RAM
+│   ├── ui/streamlit_app.py       # entry point: streamlit run
+│   ├── metrics/                  # iou.py, timing.py
+│   └── utils/                    # imagenet.py (idx -> EN label), preprocess.py, viz.py
 ├── data/
-│   └── samples/                  # 8–10 obrazów .jpg (commit do repo)
-│       ├── shepherd_with_ball.jpg
-│       ├── cat_on_keyboard.jpg
-│       ├── elephant_savanna.jpg
-│       ├── airplane_sky.jpg
-│       ├── espresso_cup.jpg
-│       ├── pizza_pepperoni.jpg
-│       ├── tiger_jungle.jpg
-│       └── snowy_wolf.jpg        # nawiązanie do papera LIME
+│   └── samples/                  # 9 obrazów .webp (gitignored — fair use stocki)
 ├── scripts/
-│   ├── __init__.py
-│   ├── run_batch.py              # generuje figury PNG dla sprawozdania
-│   └── smoke_app.py              # health-check: 1 obraz, 6 metod, brak crashy
-├── tests/
-│   ├── __init__.py
-│   ├── test_methods.py           # każda metoda zwraca [H,W] in [0,1]
-│   ├── test_models.py            # ResNet i ViT ładują się i klasyfikują
-│   └── test_metrics.py           # IoU symetryczne, w [0,1]
+│   ├── run_batch.py              # generuje figury + CSV dla sprawozdania (CUDA)
+│   └── smoke_app.py
+├── tests/                        # test_methods, test_models, test_metrics
 └── report/
-    ├── report.md                 # treść sprawozdania
-    ├── figures/                  # generowane przez scripts/run_batch.py
-    └── build_pdf.py              # weasyprint: report.md → report.pdf
+    ├── report.md                 # LOKALNIE — gitignored
+    ├── figures/                  # LOKALNIE — generowane, gitignored
+    ├── build_pdf.py              # LOKALNIE — gitignored
+    └── report.pdf                # JEDYNY plik z report/ commitowany do repo
 ```
 
 ---
@@ -269,11 +250,14 @@ Wszystkie batche **zakończone**:
 
 **Dodatkowo (poza pierwotnym planem):**
 
-- [x] **Polonizacja UI** — wszystkie napisy z ogonkami + słownik PL dla
-      ImageNet (`src/utils/imagenet_pl.py`, ~200 klas + fallback do EN)
+- [x] **Polonizacja UI** — wszystkie napisy z ogonkami; etykiety klas
+      ImageNet tłumaczone on-demand przez **Gemini 2.5 Flash via Vertex AI**
+      (region `europe-west9` — Paryż, EOG/RODO compliant), batch top-5
+      w 1 requeście, cache w pamięci procesu
 - [x] **Auto-detekcja CUDA** — UI pokazuje opcję GPU gdy dostępne; `run_batch.py`
       automatycznie używa GPU jeśli `torch.cuda.is_available()`
 - [x] **Tabulate** w Dockerfile (potrzebne dla `pandas.to_markdown()` w `build_pdf.py`)
+- [x] **MIT License** (LICENSE w repo)
 
 ---
 
@@ -284,7 +268,8 @@ PDF generowany z `report/report.md` przez WeasyPrint. Sekcje:
 1. **Wstęp** — czym jest XAI, dlaczego ważne (shortcut learning, EU AI Act,
    debug błędów modelu). Cytat z Cholleta rozdz. 10.
 2. **Co rozszerzamy względem książki** — Chollet pokazuje 1 metodę (Grad-CAM)
-   na 1 modelu (Xception, Keras). My: 6 metod, 2 architektury (CNN + ViT),
+   na 1 modelu (Xception, Keras). My: 6 metod, **3 klasyfikatory** (ResNet50
+   CNN, ViT-B/16 Transformer, Gemini 2.5 Flash Vision LLM via Vertex AI),
    PyTorch + Captum, porównanie ilościowe.
 3. **Przegląd metod** — sekcja per metoda: idea matematyczna w 5–10 zdaniach,
    wzór, pseudokod, ograniczenia.
@@ -296,13 +281,18 @@ PDF generowany z `report/report.md` przez WeasyPrint. Sekcje:
    IoU heatmap parami (macierz 6×6), dyskusja.
 7. **Przypadki ciekawe** — np. snowy_wolf: czy model patrzy na zwierzę czy na
    śnieg (klasyczny przykład shortcut learning z papera LIME)?
-8. **Dyskusja** — Grad-CAM vs IG: która "prawdziwsza"? Brak ground truth →
+8. **Klasyfikator zamknięty vs otwarty** — porównanie ResNet50, ViT-B/16
+   i Gemini 2.5 Flash na 9 obrazach. Failure cases ImageNetu (lightning_storm
+   → "fontanna" 54%; concorde → "samolot pasażerski" zamiast "Concorde").
+   Dlaczego klasyczne XAI nie działają na LLM. Skutki dla auditu (EU AI Act).
+9. **Dyskusja** — Grad-CAM vs IG: która "prawdziwsza"? Brak ground truth →
    nie da się rozstrzygnąć obiektywnie. Sanity checks Adebayo et al. 2018.
-9. **Wnioski** — XAI to nie magia, każda metoda ma założenia. Praktyczne
-   zalecenie: używaj ≥2 metod komplementarnych przed wdrożeniem modelu.
-10. **Bibliografia** — Selvaraju 2017 (Grad-CAM), Sundararajan 2017 (IG),
+10. **Wnioski** — XAI to nie magia, każda metoda ma założenia. Praktyczne
+    zalecenie: używaj ≥2 metod komplementarnych przed wdrożeniem modelu.
+11. **Bibliografia** — Selvaraju 2017 (Grad-CAM), Sundararajan 2017 (IG),
     Smilkov 2017 (SmoothGrad), Zeiler 2014 (Occlusion), Ribeiro 2016 (LIME),
-    Adebayo 2018 (Sanity checks), Chollet rozdz. 10.
+    Adebayo 2018 (Sanity checks), Chollet rozdz. 10, Abnar 2020
+    (attention rollout), Anthropic 2023 (mechanistic interpretability).
 
 **Długość faktyczna:** ~30 stron PDF (18 figur galerii + 2 macierze IoU).
 
@@ -310,15 +300,15 @@ PDF generowany z `report/report.md` przez WeasyPrint. Sekcje:
 
 ## 8. Kryteria akceptacji (5.0)
 
-- [ ] `make up` w czystym środowisku → apka działa pod `xai.local.pl`
-- [ ] 6 metod XAI zaimplementowanych, każda zwraca poprawną heatmapę
-- [ ] 2 architektury modeli (CNN + ViT) działają — z dyskusją różnic
-- [ ] `make test` zielony (≥10 testów)
-- [ ] `make report` generuje PDF ≥8 stron z figurami
-- [ ] Sprawozdanie zawiera **porównanie ilościowe** (czas, IoU) — nie tylko
+- [x] `make up` w czystym środowisku → apka działa pod `xai.local.pl`
+- [x] 6 metod XAI zaimplementowanych, każda zwraca poprawną heatmapę
+- [x] 2 architektury modeli (CNN + ViT) działają — z dyskusją różnic
+- [x] `make test` zielony (20 testów)
+- [x] `make report` generuje PDF ≥8 stron z figurami (~30 stron, 18 figur)
+- [x] Sprawozdanie zawiera **porównanie ilościowe** (czas, IoU) — nie tylko
       jakościowe
-- [ ] Sprawozdanie zawiera **dyskusję ograniczeń** (sanity checks, brak GT)
-- [ ] README pozwala odtworzyć projekt komuś nieznającemu kontekstu
+- [x] Sprawozdanie zawiera **dyskusję ograniczeń** (sanity checks, brak GT)
+- [x] README pozwala odtworzyć projekt komuś nieznającemu kontekstu
 
 ---
 

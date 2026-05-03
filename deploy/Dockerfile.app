@@ -49,7 +49,9 @@ RUN pip install \
     "pygments>=2.18.0" \
     "pandas>=2.2.0" \
     "tabulate>=0.9.0" \
-    "google-genai>=1.74.0"
+    "google-genai>=1.74.0" \
+    "open-clip-torch>=3.3.0" \
+    "transformers>=5.7.0"
 
 COPY src ./src
 COPY scripts ./scripts

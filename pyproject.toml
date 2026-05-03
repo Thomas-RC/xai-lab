@@ -34,6 +34,9 @@ dependencies = [
     "pygments>=2.18.0",
     # Vertex AI (Gemini 2.5 Flash do tlumaczenia etykiet PL)
     "google-genai>=1.74.0",
+    # Open-vocabulary vision encoders (NIE LLM) do porownania z Geminim
+    "open-clip-torch>=3.3.0",        # CLIP ViT-B/32 (OpenAI 2021)
+    "transformers>=5.7.0",           # SigLIP 2 (Google 2025) via HuggingFace
 ]
 
 [project.optional-dependencies]

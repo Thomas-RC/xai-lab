@@ -18,7 +18,10 @@ from PIL import Image
 
 from src.config import settings
 from src.metrics.iou import pairwise_iou
-from src.models.loader import ModelName, load_model, predict
+from src.models.clip_classifier import CLIPClassifier, CLIPResponse
+from src.models.llm_classifier import LLMClassifier, VisionResponse
+from src.models.loader import LoadedModel, ModelName, load_model, predict
+from src.models.siglip_classifier import SigLIPClassifier, SigLIPResponse
 from src.translation import translate_labels
 from src.utils.imagenet import label_for, top_k as topk_predictions
 from src.utils.preprocess import to_display_array, to_model_tensor
@@ -31,6 +34,36 @@ st.set_page_config(page_title="xai-lab", layout="wide", page_icon="🔬")
 @st.cache_resource(show_spinner="Ładuję model...")
 def cached_load_model(name: ModelName, device: str):
     return load_model(name, device)
+
+
+def render_gemini_predictions(response: VisionResponse) -> None:
+    df = pd.DataFrame(
+        [
+            {"klasa (PL)": p.label, "pewność": f"{p.confidence:.1%}"}
+            for p in response.predictions
+        ]
+    )
+    st.dataframe(df, hide_index=True, use_container_width=True)
+    st.markdown("**Rozumowanie modelu:**")
+    st.info(response.reasoning)
+
+
+def render_clip_or_siglip_predictions(response) -> None:
+    en_labels = [p.label for p in response.predictions]
+    try:
+        with st.spinner("Tłumaczę etykiety przez Gemini 2.5 Flash..."):
+            pl_labels = translate_labels(en_labels)
+    except Exception as exc:  # noqa: BLE001
+        st.warning(f"Nie udało się przetłumaczyć etykiet (Vertex AI): {exc}")
+        pl_labels = en_labels
+
+    df = pd.DataFrame(
+        [
+            {"klasa (PL)": pl, "klasa (EN, kandydat)": p.label, "pewność": f"{p.confidence:.1%}"}
+            for p, pl in zip(response.predictions, pl_labels, strict=True)
+        ]
+    )
+    st.dataframe(df, hide_index=True, use_container_width=True)
 
 
 def render_predictions(probs: torch.Tensor) -> int:
@@ -124,15 +157,22 @@ def _png_bytes(arr: np.ndarray) -> bytes:
 st.title("🔬 xai-lab")
 st.caption(
     "6 metod XAI obok siebie — Grad-CAM, Grad-CAM++, Integrated Gradients, "
-    "SmoothGrad, Occlusion, LIME. Modele: ResNet50 (CNN) i ViT-B/16 (Transformer)."
+    "SmoothGrad, Occlusion, LIME. Modele: ResNet50 (CNN), ViT-B/16 (Transformer), "
+    "Gemini 2.5 Flash (Vision LLM)."
 )
 
 with st.sidebar:
     st.header("Konfiguracja")
-    model_labels = {"resnet50": "ResNet50 (CNN)", "vit_b_16": "ViT-B/16 (Transformer)"}
+    model_labels = {
+        "resnet50": "ResNet50 (CNN, ImageNet 1k)",
+        "vit_b_16": "ViT-B/16 (Transformer, ImageNet 1k)",
+        "clip": "CLIP ViT-B/32 (open-vocab, OpenAI 2021)",
+        "siglip2": "SigLIP 2 ViT-B/16 (open-vocab, Google 2025)",
+        "gemini_vision": "Gemini 2.5 Flash (Vision LLM)",
+    }
     model_name: ModelName = st.selectbox(
         "Model",
-        options=["resnet50", "vit_b_16"],
+        options=["resnet50", "vit_b_16", "clip", "siglip2", "gemini_vision"],
         index=0 if settings.default_model == "resnet50" else 1,
         format_func=lambda x: model_labels[x],
     )
@@ -200,16 +240,78 @@ if img is None:
     st.info("Wgraj obraz aby zacząć.")
     st.stop()
 rgb = to_display_array(img)
-input_tensor = to_model_tensor(img, device=device)
 
 col_left, col_right = st.columns([1, 2])
 with col_left:
     st.image(rgb, caption=f"Wejście 224×224 — {img_name}", use_container_width=True)
 
+loaded = cached_load_model(model_name, device)
+
+if isinstance(loaded, LLMClassifier):
+    with col_right:
+        st.subheader("Top-5 predykcji (Gemini Vision)")
+        try:
+            with st.spinner("Pytam Gemini 2.5 Flash..."):
+                gemini_response = loaded.classify(img)
+            render_gemini_predictions(gemini_response)
+        except Exception as exc:  # noqa: BLE001
+            st.error(f"Błąd Vertex AI: {exc}")
+            st.stop()
+
+    st.divider()
+    st.subheader("Dlaczego brak heatmap XAI?")
+    st.warning(
+        "**Grad-CAM, Grad-CAM++, Integrated Gradients i SmoothGrad** wymagają "
+        "gradientu względem dyskretnego logitu klasy. Gemini to model językowy "
+        "zwracający tekst — nie ma końcowego klasyfikatora ani logitów, więc te "
+        "cztery metody nie definiują się matematycznie. **Occlusion** i **LIME** "
+        "teoretycznie zadziałałyby (model-agnostic), ale każde maskowanie obrazu "
+        "= osobny request do Vertex AI: koszt i latencja w setkach razy wyższe niż "
+        "klasyczne CNN. To jest jeden z głównych problemów XAI dla nowoczesnych "
+        "modeli multimodalnych — aktywne pole badawcze (attention rollout, "
+        "mechanistic interpretability)."
+    )
+    st.stop()
+
+if isinstance(loaded, (CLIPClassifier, SigLIPClassifier)):
+    model_human_name = "CLIP" if isinstance(loaded, CLIPClassifier) else "SigLIP 2"
+    with col_right:
+        st.subheader(f"Top-5 predykcji ({model_human_name})")
+        try:
+            with st.spinner(f"Klasyfikuję obraz przez {model_human_name}..."):
+                response = loaded.classify(img, top_k=5)
+            render_clip_or_siglip_predictions(response)
+            st.caption(
+                "Lista 1020 kandydatów: 1000 etykiet ImageNet + 20 dorzuconych "
+                "ręcznie (m.in. spiral galaxy, lightning storm, Concorde, wildcat, "
+                "person feeding a cat). Pełna lista: `src/models/clip_classifier.py`."
+            )
+        except Exception as exc:  # noqa: BLE001
+            st.error(f"Błąd: {exc}")
+            st.stop()
+
+    st.divider()
+    st.subheader(f"XAI dla {model_human_name}?")
+    st.info(
+        f"**{model_human_name} to encoder obrazu (Vision Transformer), nie LLM.** "
+        "Ma policzalne gradienty względem podobieństwa cosinusowego z embeddingiem "
+        "tekstu kandydata — czyli klasyczne metody XAI (Grad-CAM, Integrated "
+        "Gradients, SmoothGrad, Occlusion, LIME) **teoretycznie zadziałają**. "
+        "Wymaga to dodatkowego wrapper-a który zamienia klasyfikację top-5 na "
+        "skalarny target dla gradientu (np. cosine similarity z konkretnym "
+        "tekstem-kandydatem). Implementacja w toku — patrz dyskusja w sekcji 8 "
+        "sprawozdania."
+    )
+    st.stop()
+
+assert isinstance(loaded, LoadedModel)
+input_tensor = to_model_tensor(img, device=device)
+model_human_name = "ResNet50" if loaded.name == "resnet50" else "ViT-B/16"
+
 with col_right:
-    loaded = cached_load_model(model_name, device)
-    probs = predict(loaded.model, input_tensor)
-    st.subheader("Top-5 predykcji")
+    st.subheader(f"Top-5 predykcji ({model_human_name})")
+    with st.spinner(f"Klasyfikuję obraz przez {model_human_name}..."):
+        probs = predict(loaded.model, input_tensor)
     target_class = render_predictions(probs)
 
 st.divider()

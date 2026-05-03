@@ -1,8 +1,10 @@
 # xai-lab
 
 Webowa stacja diagnostyczna dla klasyfikatorów obrazów. Uploadujesz zdjęcie,
-wybierasz model (ResNet50 / ViT-B/16), klikasz **Wyjaśnij** — i dostajesz
-**6 heatmap obok siebie**, każda wygenerowana inną metodą XAI:
+wybierasz model (ResNet50 / ViT-B/16 / Gemini 2.5 Flash Vision), klikasz
+**Wyjaśnij** — i dostajesz **6 heatmap obok siebie** (dla CNN/ViT) albo
+strukturalną odpowiedź LLM z uzasadnieniem (dla Gemini Vision).
+Każda heatmapa wygenerowana inną metodą XAI:
 
 | # | Metoda | Rok | Typ |
 |---|---|---|---|
@@ -20,37 +22,14 @@ rozszerzenie rozdziału 10 z F. Cholleta *Deep Learning with Python*.
 
 ```bash
 cp .env.example .env
+# Wrzuć GCP service account JSON do ./secrets/, zaktualizuj GCP_* w .env
 make up                 # → http://xai.local.pl
 make logs               # podgląd logów
-```
-
-## Generowanie sprawozdania PDF
-
-```bash
-make report             # generuje report/report.pdf z figurami
 ```
 
 ## Struktura repo
 
 Patrz [PLAN.md](PLAN.md) — pełny plan, architektura, decyzje projektowe.
-
-```
-xai-lab/
-├── PLAN.md                     # plan projektu
-├── docker-compose.yml
-├── pyproject.toml
-├── deploy/Dockerfile.app
-├── src/
-│   ├── models/loader.py        # ResNet50 + ViT-B/16
-│   ├── xai/                    # 6 metod XAI
-│   ├── ui/streamlit_app.py     # web UI
-│   ├── metrics/                # IoU, timing
-│   └── utils/                  # preprocess, ImageNet (PL+EN), viz
-├── data/samples/               # 9 obrazów testowych
-├── scripts/{run_batch,smoke_app}.py
-├── tests/
-└── report/{report.md, build_pdf.py, figures/}
-```
 
 ## Stack
 
@@ -58,6 +37,10 @@ xai-lab/
 - Captum + pytorch-grad-cam + LIME
 - Streamlit (UI po polsku), WeasyPrint (Markdown → PDF)
 - Docker + Traefik, GPU passthrough (nvidia-container-toolkit)
+- Gemini 2.5 Flash via Vertex AI (`google-genai`) — dwie role:
+  (1) tłumaczenie etykiet ImageNet EN→PL on-demand,
+  (2) trzeci klasyfikator (Vision LLM, otwarty słownik) do porównania
+  z ResNet/ViT — region `europe-west9` / EOG
 
 ## Licencja
 
